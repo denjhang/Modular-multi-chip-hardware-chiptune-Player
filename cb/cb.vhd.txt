@@ -1,0 +1,186 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_UNSIGNED.ALL;
+
+entity cb is
+  Generic(
+    BTNS : integer := 23    --1+2*11
+  );
+  Port(
+    --
+    nRESET : in std_logic;
+    CLK : in std_logic;     --14.31818M
+    --CXA1645
+    SC : out std_logic;     --clk/4
+    SYNC : out std_logic;   --visyn
+    --AT90S2313
+    CK : out std_logic;     --clk/2
+    nVSYNC : out std_logic;
+    nHSYNC : out std_logic;
+    BCLK : in std_logic;
+    BSTB : in std_logic;
+    BDAT : in std_logic;    --lsb first
+    --JAMMA
+    VISYN : in std_logic;   --csync
+    nBTN : out std_logic_vector(BTNS-1 downto 0)
+  );
+  attribute PIN_ASSIGN: string;
+  attribute PIN_ASSIGN of bclk: signal is "P7";
+  attribute PIN_ASSIGN of bdat: signal is "P12";
+  attribute PIN_ASSIGN of bstb: signal is "P8";
+  attribute PIN_ASSIGN of ck: signal is "P9";
+  attribute PIN_ASSIGN of clk: signal is "P6";
+  attribute PIN_ASSIGN of nbtn: signal is "P38, P40, P37, P42, P36, P43, P35, P44, P34, P1, P33, P29, P28, P27, P26, P25, P24, P22, P20, P13, P19, P14, P18";
+  attribute PIN_ASSIGN of nhsync: signal is "P3";
+  attribute PIN_ASSIGN of nreset: signal is "P39";
+  attribute PIN_ASSIGN of nvsync: signal is "P11";
+  attribute PIN_ASSIGN of sc: signal is "P5";
+  attribute PIN_ASSIGN of sync: signal is "P4";
+  attribute PIN_ASSIGN of visyn: signal is "P2";
+end cb;
+
+architecture rtl of cb is
+  --
+  signal divsc : std_logic_vector(1 downto 0);
+  signal divck : std_logic;
+  --
+  signal vst : std_logic;
+  signal cntpw : std_logic_vector(6 downto 0);
+  --
+  signal hst : std_logic;
+  signal sr : std_logic_vector(1 downto 0);
+  signal line : std_logic_vector(6 downto 0);
+  --
+  signal rbtn : std_logic_vector(BTNS-1 downto 0);
+  signal srbtn : std_logic_vector(BTNS-1 downto 0);
+begin
+
+  --
+  SC <= divsc(0);
+  SYNC <= VISYN;
+  process(nRESET, CLK)
+  begin
+--    if(nRESET='0')then
+--      divsc <= (others => '0');
+--    elsif(CLK'event and CLK='1')then
+    if(CLK'event and CLK='1')then
+      divsc <= divsc(0) & (not divsc(1));
+    end if;
+  end process;
+
+
+  --
+  CK <= divck;
+  process(nRESET, CLK)
+  begin
+--    if(nRESET='0')then
+--      divck <= '0';
+--    elsif(CLK'event and CLK='1')then
+    if(CLK'event and CLK='1')then
+      divck <= not divck;
+    end if;
+  end process;
+
+
+  --
+  nVSYNC <= not vst;
+  process(nRESET, CLK)
+  begin
+    if(nRESET='0')then
+      vst <= '0';
+    elsif(CLK'event and CLK='1')then
+      if(divck='1')then
+      if(cntpw="1111111")then
+        vst <= not vst;
+      end if;
+      end if;
+    end if;
+  end process;
+
+  process(nRESET, CLK)
+  begin
+    if(nRESET='0')then
+      cntpw <= (others => '0');
+    elsif(CLK'event and CLK='1')then
+      if(divck='1')then
+--      if(VISYN=vst)then
+      if(sr(0)=vst)then
+        cntpw <= cntpw + '1';
+      else
+        cntpw <= (others => '0');
+      end if;
+      end if;
+    end if;
+  end process;
+
+
+  --
+--  nHSYNC <= (not hst) or VISYN;
+  nHSYNC <= (not hst) or sr(0);
+  process(nRESET, CLK)
+  begin
+    if(nRESET='0')then
+      hst <= '0';
+    elsif(CLK'event and CLK='1')then
+      if(divck='1')then
+      if(vst='1')then
+        hst <= '0';
+      elsif(line="1000000")then
+        hst <= '1';
+      end if;
+      end if;
+    end if;
+  end process;
+
+  process(nRESET, CLK)
+  begin
+    if(nRESET='0')then
+      sr <= (others => '0');
+      line <= (others => '0');
+    elsif(CLK'event and CLK='1')then
+      if(divck='1')then
+      sr <= sr(0) & VISYN;
+      if(vst='1')then
+        line <= (others => '0');
+      elsif(sr="10")then
+        line <= line + '1';
+      end if;
+      end if;
+    end if;
+  end process;
+
+
+  --
+  process(rbtn)
+  begin
+    for i in 0 to BTNS-1 loop
+      if(rbtn(i)='1')then
+        nBTN(i) <= '0';
+      else
+--        nBTN(i) <= 'Z';
+        nBTN(i) <= '1';
+      end if;
+    end loop;
+  end process;
+
+  process(nRESET, BCLK)
+  begin
+    if(nRESET='0')then
+      rbtn <= (others => '0');
+    elsif(BCLK'event and BCLK='1')then
+      if(BSTB='1')then
+        rbtn <= srbtn;
+      end if;
+    end if;
+  end process;
+
+  process(nRESET, BCLK)
+  begin
+    if(nRESET='0')then
+      srbtn <= (others => '0');
+    elsif(BCLK'event and BCLK='1')then
+      srbtn <= BDAT & srbtn(BTNS-1 downto 1);
+    end if;
+  end process;
+
+end rtl;

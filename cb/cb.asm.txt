@@ -1,0 +1,1873 @@
+
+;
+;       cb.asm
+;           '04/0505    作成
+;           '04/0605    OSD表示方法変更
+;           '04/0808    OSD出力処理変更
+;                       コインエラー対策
+;
+
+;
+;       AT90S2313-10 7.15909MHz
+;
+;        1 RESET#                       20 VCC                  
+;        2 PD0/RXD      CLK     o       19 PB7/SCK      VCHG    o(isp@i)
+;        3 PD1/TXD      CMD     o       18 PB6/MISO             i(isp@o)
+;        4 XTAL2                        17 PB5/MOSI             i(isp@i)
+;        5 XTAL1                        16 PB4          BCLK    o
+;        6 PD2/INT0     VSYNC#  i       15 PB3/OC1      VOUT    o
+;        7 PD3/INT1     HSYNC#  i       14 PB2          BSTB    o
+;        8 PD4/T0       ACK#    i       13 PB1/AIN1     BDAT    o
+;        9 PD5/T1       SEL1#   o       12 PB0/AIN0     DAT     i
+;       10 GND                          11 PD6/ICP      SEL2#   o
+;
+
+;
+;       参考文献
+;         プレイステーション・ＰＡＤ／メモリ・インターフェースの解析
+;         T.Fujita氏
+;
+
+
+        .include        "2313def.inc"
+
+
+; 
+.equ    EDIT_TIM        = 45    ; 編集開始までの時間
+                                ; ※接続されるゲーム基板によって異なるが、だいたい60で1秒
+
+
+; 定数
+.equ    RAMTOP          = $60   ; RAMの先頭アドレス
+
+; ポートB
+.equ    DAT             = 0
+.equ    BDAT            = 1
+.equ    BSTB            = 2
+.equ    VOUT            = 3
+.equ    BCLK            = 4
+;.equ   MOSI            = 5     ; ISPケーブルを使ったシリアル受信用
+;.equ   MISO            = 6     ; ISPケーブルを使ったシリアル送信用
+.equ    VCHG            = 7
+
+; ポートD
+.equ    CLK             = 0
+.equ    CMD             = 1
+.equ    nVSYNC          = 2
+.equ    nHSYNC          = 3
+.equ    nACK            = 4
+.equ    nSEL1           = 5
+.equ    nSEL2           = 6
+
+; Event
+.equ    EV_VSYNC        = 0
+
+; PadSts
+.equ    PS_P1           = 0
+.equ    PS_P2           = 1
+.equ    PS_P1CRUP       = 4
+.equ    PS_P2CRUP       = 5
+
+; EditSts
+.equ    EDIT_P          = 0
+.equ    EDIT_EDIT       = 1
+.equ    EDIT_COLTYP     = 2
+
+; パッド
+.equ    PADBUFSIZE      = 2     ; パッド受信バッファサイズ（2～32で偶数）
+
+; OSD
+.equ    VW              = 10    ; OSD横文字数
+.equ    VH              = 6     ; OSD縦文字数
+.equ    HPOSMAX         = 48-1  ; OSD表示開始位置の範囲（0～HPOSMAX）
+.equ    HPOSDEF         = 16    ; デフォルトOSD表示開始位置
+
+; EEPROM
+.equ    E2S             = 5     ; EEPROM→SRAM
+.equ    F2S             = 6     ; FLUSHROM→SRAM
+.equ    S2E             = 7     ; SRAM→EEPROM
+.equ    BTNTBLSIZE      = 2*16
+.equ    P1BTNTBL        = $08
+.equ    P2BTNTBL        = P1BTNTBL+BTNTBLSIZE
+
+
+; レジスタ
+; ※r0～r15は定数の代入・演算・比較はできない
+;   r0はlpm命令で使用される
+;   X=r27:r26 Y=r29:r28 Z=r31:r30
+.def    Zero            = r1    ; ゼロレジスタ
+.def    Tmpr            = r2    ; 汎用(定数は扱えない)
+.def    SregSave        = r3    ; 割り込み処理内で SREG を保存
+
+.def    EditKey         = r5    ; 編集時のキー入力判定用
+                                ; ※ボタンを押したときにビットが0になる
+                                ;   b7:←
+                                ;   b6:↓
+                                ;   b5:→
+                                ;   b4:↑
+                                ;   b3:□
+                                ;   b2:×
+                                ;   b1:○
+                                ;   b0:△
+.def    SelCnt          = r6    ; SELECT押下カウンタ
+.def    VHPos           = r7    ; OSD表示開始位置
+
+.def    PadRapid        = r9    ; 連射カウンタ・カーソル点滅用
+.def    PadSts          = r10   ; パッド状態
+                                ;   PS_P1=1: P1接続
+                                ;   PS_P2=1: P2接続
+                                ;   PS_P1CRUP: P1クレジット用
+                                ;   PS_P2CRUP: P2クレジット用
+
+.def    BtnP10          = r11   ; P1ボタンデータ送信用
+.def    BtnP11          = r12   ; P1ボタンデータ送信用
+.def    BtnP20          = r13   ; P2ボタンデータ送信用
+.def    BtnP21          = r14   ; P2ボタンデータ送信用
+
+.def    SioCnt          = r15   ; 送信ビットカウンタ
+                                ; ※割り込み処理で値を変更する
+
+.def    Tmpi            = r16   ; 汎用(定数を扱える)
+.def    LpCnt           = r17   ; ループ用
+
+.def    Event           = r18   ; イベント
+                                ;   EV_VSYNC=1: VSYNC割り込み発生
+
+.def    VLpCnt1         = r19   ; OSD表示用ループカウンタ
+.def    VLpCnt2         = r20   ; OSD表示用ループカウンタ
+.def    VLpCnt3         = r21   ; OSD表示用ループカウンタ
+                                ; ※割り込み処理で値を変更する
+
+.def    EditSts         = r22   ; 編集状態
+                                ;   EDIT_EDIT=1: 編集中
+                                ;   EDIT_P=0: P1
+                                ;         =1: P2
+                                ;   EDIT_COLTYP=0: ボタン名
+                                ;              =1: JAMMA端子名
+.def    EditRowY        = r23   ; カーソル行位置
+                                ;   b7-b4:Row
+                                ;   b3-b0:Y
+.def    EditColX        = r24   ; カーソル桁位置
+                                ;   b7-b4:Col
+                                ;   b3-b0:X
+
+.def    SioDat          = r25   ; 送信データ
+                                ; ※割り込み処理で値を変更する
+
+
+; RAM
+; ※RAM使用量に注意すること。
+        .dseg
+        .org    RAMTOP
+P1Pad:  .byte   1+PADBUFSIZE    ; 応答ID+データ
+P2Pad:  .byte   1+PADBUFSIZE    ; 応答ID+データ
+
+; ※Vramのバイト数は BTNTBLSIZE 以上必要
+Pad2BtnTbl1:
+        .byte   BTNTBLSIZE      ; 
+Pad2BtnTbl2:
+Vram:   .byte   VW*VH
+
+
+; 割り込みベクタ
+        .cseg
+        .org    $000
+        rjmp    ResetIntr       ; Reset pin, Power on reset, Watchdog reset
+        rjmp    Int0Intr        ; External int0
+        rjmp    Int1Intr        ; External int1
+        rjmp    PC+0            ; Counter1 capture event
+        rjmp    PC+0            ; Counter1 compare match
+        rjmp    PC+0            ; Counter1 overflow
+        rjmp    PC+0            ; Counter0 overflow
+        rjmp    PC+0            ; Uart rx complete
+        rjmp    PC+0            ; Uart data register empty
+        rjmp    PC+0            ; Uart tx complete
+        rjmp    PC+0            ; Analog comparator
+
+
+; リセット
+ResetIntr:
+
+        ; スタック設定
+        ldi     Tmpi, low(RAMEND)
+        out     SPL, Tmpi
+
+        ; ゼロレジスタ
+        clr     Zero
+
+        ; 出力するデータ・入力プルアップ設定
+        ; ※出力の場合: 0:L 1:H
+        ;   入力の場合: プルアップ 0:なし 1:あり
+        ldi     Tmpi, 0b01100000
+        out     PORTB, Tmpi
+        ldi     Tmpi, 0b1101111
+        out     PORTD, Tmpi
+
+        ; ポート入出力設定
+        ; ※0:入力 1:出力
+        ldi     Tmpi, 0b10011110
+        out     DDRB, Tmpi
+        ldi     Tmpi, 0b1100011
+        out     DDRD, Tmpi
+
+
+        ; INT0割り込み設定
+        ; ※INT0 L→H   (1<<ISC01)+(1<<ISC00)
+        ;   INT0 H→L   (1<<ISC01)           
+        ;   予約                   (1<<ISC00)
+        ;   INT0 L                          0
+        in      Tmpi, MCUCR
+        andi    Tmpi, ~((1<<ISC01)+(1<<ISC00))
+        ori     Tmpi, (1<<ISC01)
+        out     MCUCR, Tmpi
+
+        ; INT0割り込み許可
+        in      Tmpi, GIMSK
+        ori     Tmpi, (1<<INT0)
+        out     GIMSK, Tmpi
+
+        ; INT1割り込み設定
+        ; ※INT1 L→H   (1<<ISC11)+(1<<ISC10)
+        ;   INT1 H→L   (1<<ISC11)           
+        ;   予約                   (1<<ISC10)
+        ;   INT1 L                          0
+        in      Tmpi, MCUCR
+        andi    Tmpi, ~((1<<ISC11)+(1<<ISC10))
+        ori     Tmpi, (1<<ISC11)
+        out     MCUCR, Tmpi
+
+        rcall   DisInt1Intr
+
+
+        ; TIMER0クロック設定
+        ; ※T0 L→H     (1<<CS02)+(1<<CS01)+(1<<CS00)
+        ;   T0 H→L     (1<<CS02)+(1<<CS01)          
+        ;   CK/1024     (1<<CS02)+          (1<<CS00)
+        ;   CK/ 256     (1<<CS02)                    
+        ;   CK/  64               (1<<CS01)+(1<<CS00)
+        ;   CK/   8               (1<<CS01)          
+        ;   CK/   1                         (1<<CS00)
+        ;   停止                                    0
+        in      Tmpi, TCCR0
+        andi    Tmpi, ~((1<<CS02)+(1<<CS01)+(1<<CS00))
+        ori     Tmpi, (1<<CS02)+(1<<CS01)
+        out     TCCR0, Tmpi
+
+;       ; TIMER0割り込み禁止
+;       in      Tmpi, TIMSK
+;       andi    Tmpi, ~(1<<TOIE0)
+;       out     TIMSK, Tmpi
+
+
+        ; SLEEP許可
+        in      Tmpi, MCUCR
+        ori     Tmpi, (1<<SE)
+;       ori     Tmpi, (1<<SM)   ; パワーダウンモード
+        andi    Tmpi, ~(1<<SM)  ; アイドルモード
+        out     MCUCR, Tmpi
+
+        ; アナログコンパレータ停止
+        in      Tmpi, ACSR
+        ori     Tmpi, (1<<ACD)
+        out     ACSR, Tmpi
+
+        ; レジスタ初期化
+        clr     Event
+        clr     PadSts
+        clr     PadRapid
+        clr     EditSts
+        clr     EditKey
+        clr     SelCnt
+        ldi     Tmpi, HPOSDEF
+        mov     VHPos, Tmpi
+        clr     EditRowY
+        clr     EditColX
+
+        ldi     Tmpi, (1<<E2S)+0b00
+        rcall   SetBtnTbl
+        ldi     Tmpi, (1<<E2S)+0b11
+        rcall   SetBtnTbl
+
+        ; 割り込み許可
+        sei
+
+
+Main:
+
+        cpse    Event, Zero
+        sleep                   ; 割り込み待ち
+
+        sbrc    Event, EV_VSYNC
+        rcall   Int0Event
+
+        sbrc    EditSts, EDIT_EDIT
+        rcall   TblDraw         ; OSD更新
+
+        rjmp    Main
+
+
+
+; INT0割り込み
+Int0Intr:
+        in      SregSave, SREG
+
+        ; イベントフラグセット
+        ori     Event, (1<<EV_VSYNC)
+        ; 連射カウンタ
+        inc     PadRapid
+
+        sbrc    EditSts, EDIT_EDIT
+        rcall   EnaInt1Intr     ; OSD表示開始
+
+        ; 表示画面切り替え
+        sbrc    EditSts, EDIT_EDIT
+        sbi     PORTB, VCHG     ; OSD
+        sbrs    EditSts, EDIT_EDIT
+        cbi     PORTB, VCHG     ; 通常
+
+        out     SREG, SregSave
+        reti
+
+
+Int0Event:
+        rcall   GetP1Pad
+        rcall   GetP2Pad
+
+        ; イベントフラグクリア
+        andi    Event, ~(1<<EV_VSYNC)
+
+;       rcall   PadDataTx
+        rcall   SetBtn
+
+        rcall   EditKeySelIn
+        rjmp    EditKeyIn
+
+
+
+EditKeySelInExit:
+        clr     SelCnt
+        ret
+
+EditKeySelIn:
+        ser     Tmpi
+        sbrc    PadSts, PS_P1
+        lds     Tmpi, P1Pad+1
+        ser     SioDat
+        sbrc    PadSts, PS_P2
+        lds     SioDat, P2Pad+1
+
+        mov     LpCnt, Tmpi
+        tst     SelCnt
+        brne    PC+3
+
+        ; SELECT押し始め
+        and     LpCnt, SioDat
+        rjmp    PC+3
+
+        sbrc    EditSts, EDIT_P
+        mov     LpCnt, SioDat
+
+        sbrc    LpCnt, 0
+        rjmp    EditKeySelInExit
+
+        sbrc    EditSts, EDIT_EDIT
+        rjmp    PC+5
+        sbrs    SioDat, 0
+        ori     EditSts, (1<<EDIT_P)
+        sbrs    Tmpi, 0
+        andi    EditSts, ~(1<<EDIT_P)
+
+        ldi     Tmpi, EDIT_TIM
+        cp      SelCnt, Tmpi
+        brne    PC+2
+        ret
+        inc     SelCnt
+        cpse    SelCnt, Tmpi
+        ret
+
+        sbrs    EditSts, EDIT_EDIT
+        rjmp    EnterEdit
+
+        ; 
+        clt
+        bld     PadSts, PS_P1CRUP
+        bld     PadSts, PS_P2CRUP
+
+        ; 編集終了
+        andi    EditSts, ~(1<<EDIT_EDIT)
+        ldi     Tmpi, (1<<S2E)+0b00
+        sbrc    EditSts, EDIT_P
+        ldi     Tmpi, (1<<S2E)+0b10
+        rcall   SetBtnTbl
+
+        ldi     Tmpi, (1<<E2S)+0b00
+        rcall   SetBtnTbl
+        ldi     Tmpi, (1<<E2S)+0b11
+        rjmp    SetBtnTbl
+
+EnterEdit:
+        ; 編集開始
+        rcall   ClrScr
+
+        ldi     YL, low(Vram+VW*0+0)
+        ldi     YH, high(Vram+VW*0+0)
+        ldi     Tmpi, 'P'
+        rcall   PutChr
+        ldi     YL, low(Vram+VW*1+0)
+        ldi     YH, high(Vram+VW*1+0)
+        ldi     Tmpi, '1'
+        sbrc    EditSts, EDIT_P
+        inc     Tmpi
+        rcall   PutChr
+
+        ori     EditSts, (1<<EDIT_EDIT)
+        ldi     Tmpi, (1<<E2S)+0b00
+        sbrc    EditSts, EDIT_P
+        ldi     Tmpi, (1<<E2S)+0b10
+        rjmp    SetBtnTbl
+
+
+
+EditKeyInExit:
+        clr     EditKey
+        ret
+
+EditKeyIn:
+
+        sbrs    EditSts, EDIT_EDIT
+        rjmp    EditKeyInExit
+        sbrc    EditSts, EDIT_P
+        rjmp    EditKeyInP2
+
+        sbrs    PadSts, PS_P1
+        rjmp    EditKeyInExit
+        lds     Tmpi, P1Pad+1
+        lds     LpCnt, P1Pad+2
+        rjmp    EditKeyInRt
+
+EditKeyInP2:
+        sbrs    PadSts, PS_P2
+        rjmp    EditKeyInExit
+        lds     Tmpi, P2Pad+1
+        lds     LpCnt, P2Pad+2
+
+EditKeyInRt:
+        mov     SioDat, LpCnt
+        andi    Tmpi, $f0
+        andi    LpCnt, $f0
+        swap    LpCnt
+        or      Tmpi, LpCnt
+        com     EditKey
+        or      EditKey, Tmpi
+        mov     Tmpr, EditKey
+        mov     EditKey, Tmpi
+
+        sbrs    Tmpr, 7         ; ←
+        rcall   EditKeyLeft
+        sbrs    Tmpr, 6         ; ↓
+        rcall   EditKeyDown
+        sbrs    Tmpr, 5         ; →
+        rcall   EditKeyRight
+        sbrs    Tmpr, 4         ; ↑
+        rcall   EditKeyUp
+        sbrs    Tmpr, 3         ; □
+        rcall   EditKeyShikaku
+        sbrs    Tmpr, 2         ; ×
+        rcall   EditKeyBatsu
+        sbrs    Tmpr, 1         ; ○
+        rcall   EditKeyMaru
+        sbrs    Tmpr, 0         ; △
+        rcall   EditKeySankaku
+
+        ; 
+        mov     Tmpi, Tmpr
+        andi    Tmpi, $f0
+        cpi     Tmpi, $f0
+        breq    PC+2
+        clr     PadRapid
+
+        ret
+
+
+EditKeyLeft:
+        mov     Tmpi, EditColX
+        andi    Tmpi, $0f
+        breq    PC+3
+        dec     EditColX
+        ret
+        andi    EditColX, $f0
+        breq    PC+3
+        subi    EditColX, $10
+        ret
+        ldi     EditColX, ((12-(VW-2))<<4)+((VW-2)-1)
+        ret
+
+EditKeyDown:
+        mov     Tmpi, EditRowY
+        andi    Tmpi, $0f
+        cpi     Tmpi, (VH-2)-1
+        brsh    PC+3
+        inc     EditRowY
+        ret
+        mov     Tmpi, EditRowY
+        andi    Tmpi, $f0
+        cpi     Tmpi, (16-(VH-2))<<4
+        brsh    PC+3
+        subi    EditRowY, -$10
+        ret
+        clr     EditRowY
+        ret
+
+EditKeyRight:
+        mov     Tmpi, EditColX
+        andi    Tmpi, $0f
+        cpi     Tmpi, (VW-2)-1
+        brsh    PC+3
+        inc     EditColX
+        ret
+        mov     Tmpi, EditColX
+        andi    Tmpi, $f0
+        cpi     Tmpi, (12-(VW-2))<<4
+        brsh    PC+3
+        subi    EditColX, -$10
+        ret
+        clr     EditColX
+        ret
+
+EditKeyUp:
+        mov     Tmpi, EditRowY
+        andi    Tmpi, $0f
+        breq    PC+3
+        dec     EditRowY
+        ret
+        andi    EditRowY, $f0
+        breq    PC+3
+        subi    EditRowY, $10
+        ret
+        ldi     EditRowY, ((16-(VH-2))<<4)+((VH-2)-1)
+        ret
+
+EditKeyShikaku:
+        ldi     Tmpi, (1<<EDIT_COLTYP)
+        eor     EditSts, Tmpi
+        ret
+
+
+.equ    TEST            = 7
+.equ    CREDIT          = 6
+.equ    START           = 5
+.equ    UP              = 4
+.equ    DOWN            = 3
+.equ    LEFT            = 2
+.equ    RIGHT           = 1
+.equ    BTNA            = 0
+
+.equ    BTNB            = 7
+.equ    BTNC            = 6
+.equ    BTND            = 5
+.equ    BTNE            = 4
+.equ    RAPID1          = 1
+.equ    RAPID0          = 0
+
+
+EditKeyBatsu:
+        ldi     ZL, low(Pad2BtnTbl1)
+        ldi     ZH, high(Pad2BtnTbl1)
+        mov     Tmpi, EditRowY
+        andi    Tmpi, $f0
+        swap    Tmpi
+        mov     LpCnt, EditRowY
+        andi    LpCnt, $0f
+        add     Tmpi, LpCnt
+        add     Tmpi, Tmpi
+        add     ZL, Tmpi
+        adc     ZH, Zero
+
+        mov     Tmpi, EditColX
+        andi    Tmpi, $f0
+        swap    Tmpi
+        mov     LpCnt, EditColX
+        andi    LpCnt, $0f
+        add     Tmpi, LpCnt
+
+;       0000    1000
+;       0001    0100
+;       0010    0010
+;       0011    0001
+;       0100         1000
+;       0101         0100
+;       0110         0010
+;       0111         0001
+
+        ldi     XL, (1<<7)
+        sbrc    Tmpi, 1
+        ldi     XL, (1<<5)
+        sbrc    Tmpi, 0
+        lsr     XL
+        sbrc    Tmpi, 2
+        swap    XL
+
+        sbrs    Tmpi, 3
+        ldd     YL, Z+0
+        sbrc    Tmpi, 3
+        ldd     YL, Z+1
+        ldd     YH, Z+1
+
+        mov     LpCnt, YL
+        and     LpCnt, XL
+        brne    PC+3
+
+        ; '-'→'O'
+        or      YL, XL
+        rjmp    EditKeyBatsuExit
+
+        ; 00>10 'O'→'2'
+        ; 10>11 '2'→'4'
+        ; 11>00 '4'→'-'
+
+        mov     LpCnt, YH
+        bst     YH, RAPID1
+        bld     YH, RAPID0
+        com     LpCnt
+        bst     LpCnt, RAPID0
+        bld     YH, RAPID1
+
+        mov     LpCnt, YH
+        andi    LpCnt, (1<<RAPID1)+(1<<RAPID0)
+        cpi     LpCnt, (1<<RAPID0)
+        brne    PC+4
+
+        ; '4'→'-'
+        com     XL
+        and     YL, XL
+        andi    YH, ~((1<<RAPID1)+(1<<RAPID0))
+
+EditKeyBatsuExit:
+        sbrc    Tmpi, 3
+        rjmp    PC+4
+        std     Z+0, YL
+        std     Z+1, YH
+        ret
+
+        andi    YL, ~((1<<RAPID1)+(1<<RAPID0))
+        andi    YH, (1<<RAPID1)+(1<<RAPID0)
+        or      YH, YL
+        std     Z+1, YH
+        ret
+
+EditKeyMaru:
+        ret
+
+EditKeySankaku:
+        andi    SioDat, 0b00001111      ; R1L1R2L2
+        breq    TblInit
+        cpi     SioDat, ~0b11111000     ; R1
+        breq    VHPosRight
+        cpi     SioDat, ~0b11110100     ; L1
+        breq    VHPosLeft
+        ret
+
+TblInit:
+        push    Tmpr
+        ldi     Tmpi, (1<<F2S)+0b00
+        rcall   SetBtnTbl
+        pop     Tmpr
+        ret
+
+VHPosRight:
+        mov     Tmpi, VHPos
+        cpi     Tmpi, HPOSMAX
+        brlo    PC+2
+        ret
+        inc     VHPos
+        ret
+
+VHPosLeft:
+        tst     VHPos
+        brne    PC+2
+        ret
+        dec     VHPos
+        ret
+
+
+
+
+
+;PutPadData:
+;
+;       ldi     YL, low(Vram+VW*0+0)
+;       ldi     YH, high(Vram+VW*0+0)
+;       mov     Tmpi, PadSts
+;       rcall   PutHex
+;
+;       ldi     YL, low(Vram+VW*0+0)
+;       ldi     YH, high(Vram+VW*0+0)
+;       lds     Tmpi, P1Pad+0
+;       rcall   PutHex
+;       ldi     Tmpi, '@'
+;       rcall   PutChr
+;       lds     Tmpi, P1Pad+1
+;       rcall   PutHex
+;       lds     Tmpi, P1Pad+2
+;       rcall   PutHex
+;
+;       ldi     YL, low(Vram+VW*1+0)
+;       ldi     YH, high(Vram+VW*1+0)
+;       lds     Tmpi, P2Pad+0
+;       rcall   PutHex
+;       ldi     Tmpi, '@'
+;       rcall   PutChr
+;       lds     Tmpi, P2Pad+1
+;       rcall   PutHex
+;       lds     Tmpi, P2Pad+2
+;       rjmp    PutHex
+;
+;
+;PutHex:
+;       mov     SioDat, Tmpi
+;       swap    Tmpi
+;       rcall   PutHex4 ; b7-b4
+;       mov     Tmpi, SioDat
+;                       ; b3-b0
+;PutHex4:
+;       andi    Tmpi, $0f
+;       subi    Tmpi, 10
+;       brmi    PC+2
+;       subi    Tmpi, -('A'-'0'-10)     ; 'A'～'F'
+;       subi    Tmpi, -('0'+10)
+;       rjmp    PutChr
+
+
+TblBtn:
+;       .db     "TCS         ", "SRTUDLRABCDE"
+        .db     "TCS         ", "SRT?=<>ABCDE"
+
+TblJammaP1:
+        .db     "TCS112222222", "SRT890123456"
+TblJammaP2:
+        .db     "TCS         ", "SRTVWXYZabcd"
+
+TblPad:
+;       .db     " L D R USTR3L3SE□×○△R1L1R2L2"
+;       .db     " < = > ?STR3L3SE ' ( : ;R1L1R2L2"
+        .db     " < = > ?STR3L3SE ' ( : ", $3b ,"R1L1R2L2"
+
+
+TblDraw:
+
+;       rcall   PutPadData
+
+
+        mov     XH, EditRowY
+        andi    XH, $f0
+        swap    XH
+
+        mov     XL, EditColX
+        andi    XL, $f0
+        swap    XL
+
+
+        ldi     ZL, low(TblPad*2)
+        ldi     ZH, high(TblPad*2)
+        mov     Tmpi, XH
+        add     Tmpi, Tmpi
+        add     ZL, Tmpi
+        adc     ZH, Zero
+        ldi     YL, low(Vram+VW*2+0)
+        ldi     YH, high(Vram+VW*2+0)
+        ldi     LpCnt, VH-2
+PadStrLp:
+        lpm
+        adiw    ZL, 1
+        mov     Tmpi, r0
+        rcall   PutChr
+        lpm
+        adiw    ZL, 1
+        mov     Tmpi, r0
+        rcall   PutChr
+        adiw    YL, VW-2
+        dec     LpCnt
+        brne    PadStrLp
+
+        ldi     ZL, low(TblBtn*2)
+        ldi     ZH, high(TblBtn*2)
+        sbrs    EditSts, EDIT_COLTYP
+        rjmp    PC+7
+        ldi     ZL, low(TblJammaP1*2)
+        ldi     ZH, high(TblJammaP1*2)
+        sbrs    EditSts, EDIT_P
+        rjmp    PC+3
+        ldi     ZL, low(TblJammaP2*2)
+        ldi     ZH, high(TblJammaP2*2)
+
+        add     ZL, XL
+        adc     ZH, Zero
+        ldi     YL, low(Vram+VW*0+2)
+        ldi     YH, high(Vram+VW*0+2)
+
+        ldi     Tmpi, 2
+        mov     Tmpr, Tmpi
+BtnStrLp2:
+
+        ldi     LpCnt, VW-2
+BtnStrLp1:
+        lpm
+        adiw    ZL, 1
+        mov     Tmpi, r0
+        rcall   PutChr
+        dec     LpCnt
+        brne    BtnStrLp1
+
+        adiw    ZL, 12-(VW-2)
+        adiw    YL, 2
+        dec     Tmpr
+        brne    BtnStrLp2
+
+        ldi     ZL, low(Pad2BtnTbl1)
+        ldi     ZH, high(Pad2BtnTbl1)
+        mov     Tmpi, XH
+        add     Tmpi, Tmpi
+        add     ZL, Tmpi
+        adc     ZH, Zero
+        ldi     YL, low(Vram+VW*2+2)
+        ldi     YH, high(Vram+VW*2+2)
+        ldi     Tmpi, VH-2
+CnvTblLp1:
+        push    Tmpi
+
+        ldd     r0, Z+0
+        ldd     Tmpr, Z+1
+
+        ldi     SioDat, $4f
+        sbrs    Tmpr, RAPID1
+        rjmp    PC+4
+        ldi     SioDat, $32
+        sbrc    Tmpr, RAPID0
+        ldi     SioDat, $34
+
+        mov     SioCnt, XL
+        tst     SioCnt
+        breq    PC+5
+        lsl     Tmpr
+        rol     r0
+        dec     SioCnt
+        brne    PC-3
+
+        ldi     LpCnt, VW-2
+CnvTblLp2:
+        lsl     Tmpr
+        rol     r0
+        ldi     Tmpi, $40
+        brcc    PC+2
+        mov     Tmpi, SioDat
+        rcall   PutChr
+        dec     LpCnt
+        brne    CnvTblLp2
+
+        adiw    ZL, 2
+        adiw    YL, 2
+        pop     Tmpi
+        dec     Tmpi
+        brne    CnvTblLp1
+
+
+;       tst     XL
+;       brne    DispCursor
+;
+;       ldi     YL, low(Vram+VW*2+2)
+;       ldi     YH, high(Vram+VW*2+2)
+;       ldi     SioDat, $06     ; '&'
+;       ldi     LpCnt, VH-2
+;       ld      Tmpi, Y
+;       cpi     Tmpi, $20       ; '-'
+;       breq    PC+2
+;       st      Y, SioDat
+;       adiw    YL, VW
+;       dec     LpCnt
+;       brne    PC-6
+
+
+DispCursor:
+        sbrc    PadRapid, 4
+        ret
+
+        ; カーソル表示
+        ldi     YL, low(Vram+VW*2+2)
+        ldi     YH, high(Vram+VW*2+2)
+
+        mov     Tmpi, EditRowY
+        andi    Tmpi, $0f
+        breq    PC+5
+        subi    YL, low(-VW)
+        sbci    YH, high(-VW)
+        dec     Tmpi
+        rjmp    PC-4
+
+        mov     Tmpi, EditColX
+        andi    Tmpi, $0f
+        add     YL, Tmpi
+        adc     YH, Zero
+
+        ldi     Tmpi, $25
+        rjmp    PutChr
+
+
+
+
+
+GetP1Pad:
+        ldi     ZL, low(P1Pad)
+        ldi     ZH, high(P1Pad)
+        ldi     Tmpi, (1<<PS_P1)
+        cbi     PORTD, nSEL1
+        sbi     PORTD, nSEL2
+        rjmp    PadRx
+
+
+GetP2Pad:
+        ldi     ZL, low(P2Pad)
+        ldi     ZH, high(P2Pad)
+        ldi     Tmpi, (1<<PS_P2)
+        sbi     PORTD, nSEL1
+        cbi     PORTD, nSEL2
+        rjmp    PadRx
+
+
+PadRx:
+        push    Tmpi
+
+        ; 40us=96
+        ldi     LpCnt, 96
+        dec     LpCnt
+        brne    PC-1
+
+        out     TCNT0, Zero
+
+        ldi     Tmpi, $01
+        rcall   PadTxRxByte
+
+        ldi     Tmpi, $42
+        rcall   PadTxRxByte
+        st      Z+, Tmpi
+        andi    Tmpi, $0f
+        brne    PC+2
+        ldi     Tmpi, $10
+        add     Tmpi, Tmpi
+        mov     Tmpr, Tmpi
+
+        ldi     Tmpi, $00
+        rcall   PadTxRxByte
+;       tst     Tmpi
+;       breq    PadCn
+;       cpi     Tmpi, $5a
+;       brne    PadNc
+
+PadCn:
+        push    Tmpr
+        mov     LpCnt, Tmpr
+        ldi     Tmpi, PADBUFSIZE
+        mov     Tmpr, Tmpi
+PadRxLp:
+        ldi     Tmpi, $00
+        rcall   PadTxRxByte
+        tst     Tmpr
+        breq    PC+3
+        dec     Tmpr
+        st      Z+, Tmpi
+        dec     LpCnt
+        brne    PadRxLp
+        pop     Tmpr
+
+        in      Tmpi, TCNT0
+        subi    Tmpi, 2
+        cp      Tmpr, Tmpi
+        brne    PadNc
+
+        ; 接続
+        pop     Tmpi
+        or      PadSts, Tmpi
+        rjmp    PadEnd
+
+PadNc:
+        ; 未接続
+        pop     Tmpi
+        com     Tmpi
+        and     PadSts, Tmpi
+        rjmp    PadEnd
+
+PadEnd:
+        sbi     PORTD, nSEL1
+        sbi     PORTD, nSEL2
+        ret
+
+
+PadTxRxByte:
+        push    LpCnt
+
+        ldi     LpCnt, 8
+PadBitLp:
+        sbrs    Tmpi, 0         ; 1/2
+        cbi     PORTD, CMD      ; 2
+        sbrc    Tmpi, 0         ; 1/2
+        sbi     PORTD, CMD      ; 2
+        cbi     PORTD, CLK      ; 2
+
+        push    LpCnt           ; 2
+        ldi     LpCnt, 10       ; 1
+        dec     LpCnt           ; 1
+        brne    PC-1            ; 1/2
+
+        sbi     PORTD, CLK      ; 2
+        sbis    PINB, DAT       ; 1/2
+        clc                     ; 1
+        sbic    PINB, DAT       ; 1/2
+        sec                     ; 1
+        ror     Tmpi            ; 1
+
+        ldi     LpCnt, 6        ; 1
+        dec     LpCnt           ; 1
+        brne    PC-1            ; 1/2
+        pop     LpCnt           ; 2
+
+        dec     LpCnt           ; 1
+        brne    PadBitLp        ; 1/2
+
+        sbi     PORTD, CMD
+
+        ; 14us=33
+        ldi     LpCnt, 33
+        dec     LpCnt
+        brne    PC-1
+
+        pop     LpCnt
+        ret
+
+
+
+
+
+ClrScr:
+        ldi     YL, low(Vram)
+        ldi     YH, high(Vram)
+        ldi     LpCnt, VW*VH
+        st      Y+, Zero
+        dec     LpCnt
+        brne    PC-2
+        ret
+
+
+PutChr:
+        tst     YH
+        brne    PutChrExit
+        cpi     YL, low(Vram)
+        brlo    PutChrExit
+        cpi     YL, low(Vram+VW*VH)
+        brsh    PutChrExit
+
+        subi    Tmpi, $20
+        andi    Tmpi, $3f
+        cpi     Tmpi, $34
+        brlo    PC+2
+        subi    Tmpi, $30-5
+        mov     YH, Tmpi
+        add     Tmpi, Tmpi
+        add     Tmpi, Tmpi
+        add     Tmpi, YH
+        clr     YH
+        st      Y+, Tmpi
+
+PutChrExit:
+        ret
+
+
+; INT1割り込み
+Int1Intr:
+        in      SregSave, SREG
+        sbrs    EditSts, EDIT_EDIT
+        rjmp    Int1IntrExit
+
+        push    r0
+        push    r5
+        push    XL
+        push    XH
+        push    ZL
+        push    ZH
+
+        in      r5, PORTB
+
+        ldi     XL, low(Vram)
+        ldi     XH, high(Vram)
+
+
+;       ; HSYNC#の立ち下がり待ち
+;       sbic    PIND, nHSYNC
+;       rjmp    PC-1
+;       ; HSYNC#の立ち上がり待ち
+;       sbis    PIND, nHSYNC
+;       rjmp    PC-1
+
+
+        ldi     VLpCnt3, VH
+VLp3:
+
+        ldi     VLpCnt2, 5
+VLp2:
+        rcall   Draw1Line
+        rcall   Draw1Line
+        rcall   Draw1Line
+
+        dec     VLpCnt2
+        brne    VLp2
+
+
+        ldi     VLpCnt2, 4
+VLp4:
+        ; HSYNC#の立ち下がり待ち
+        sbic    PIND, nHSYNC
+        rjmp    PC-1
+        ; HSYNC#の立ち上がり待ち
+        sbis    PIND, nHSYNC
+        rjmp    PC-1
+
+        dec     VLpCnt2
+        brne    VLp4
+
+
+        subi    XL, -VW
+
+        dec     VLpCnt3
+        brne    VLp3
+
+        pop     ZH
+        pop     ZL
+        pop     XH
+        pop     XL
+        pop     r5
+        pop     r0
+
+Int1IntrExit:
+        rcall   DisInt1Intr
+        out     SREG, SregSave
+        reti
+
+
+Draw1Line:
+
+        ; HSYNC#の立ち下がり待ち
+        sbic    PIND, nHSYNC
+        rjmp    PC-1
+        ; HSYNC#の立ち上がり待ち
+        sbis    PIND, nHSYNC
+        rjmp    PC-1
+
+        ; 表示開始位置
+        mov     VLpCnt1, VHPos
+        inc     VLpCnt1
+        dec     VLpCnt1         ; 1
+        brne    PC-1            ; 1/2
+
+        ld      ZL, X+          ; 2
+        sub     ZL, VLpCnt2     ; 1
+        sbc     ZH, ZH          ; 1
+        subi    ZL, low(-(FontTbl*2+5)) ; 1
+        sbci    ZH, high(-(FontTbl*2+5))        ; 1
+;       lpm                     ; 3
+
+        ldi     VLpCnt1, VW
+VLp1:
+
+        cbi     PORTB, VOUT     ; 2
+
+        lpm                     ; 3
+
+        ld      ZL, X+          ; 2
+        sub     ZL, VLpCnt2     ; 1
+
+        bst     r0, 4           ; 1
+        bld     r5, VOUT        ; 1
+        out     PORTB, r5       ; 1
+        sbc     ZH, ZH          ; 1
+
+        bst     r0, 3
+        bld     r5, VOUT
+        out     PORTB, r5
+        subi    ZL, low(-(FontTbl*2+5)) ; 1
+
+        bst     r0, 2
+        bld     r5, VOUT
+        out     PORTB, r5
+        sbci    ZH, high(-(FontTbl*2+5))        ; 1
+
+        bst     r0, 1
+        bld     r5, VOUT
+        out     PORTB, r5
+        dec     VLpCnt1         ; 1
+
+        bst     r0, 0
+        bld     r5, VOUT
+        out     PORTB, r5
+
+        brne    VLp1            ; 1/2
+
+        subi    XL, 1+VW        ; 1
+        cbi     PORTB, VOUT     ; 2
+
+        ret
+
+
+EnaInt1Intr:
+        push    Tmpi
+
+        ; INT1割り込み要求フラグクリア
+        ldi     Tmpi, (1<<INTF1)
+        out     GIFR, Tmpi
+
+        ; INT1割り込み許可
+        in      Tmpi, GIMSK
+        ori     Tmpi, (1<<INT1)
+        out     GIMSK, Tmpi
+
+        pop     Tmpi
+        ret
+
+
+DisInt1Intr:
+        push    Tmpi
+
+        ; INT1割り込み禁止
+        in      Tmpi, GIMSK
+        andi    Tmpi, ~(1<<INT1)
+        out     GIMSK, Tmpi
+
+        ; INT1割り込み要求フラグクリア
+        ldi     Tmpi, (1<<INTF1)
+        out     GIFR, Tmpi
+
+        pop     Tmpi
+        ret
+
+
+
+
+;
+; デフォルトボタン変換テーブル
+;
+DefPad2BtnTbl:
+
+;                 TCS    B        BBBB  RR
+;                 SRTUDLRA        BCDE  10
+        .db     0b00000100,     0b00000000      ;    0  ←
+        .db     0b00001000,     0b00000000      ;    1  ↓
+        .db     0b00000010,     0b00000000      ;    2  →
+        .db     0b00010000,     0b00000000      ;    3  ↑
+        .db     0b10100000,     0b00000000      ;    4  START
+        .db     0b00000000,     0b00000000      ;    5  R3
+        .db     0b00000000,     0b00000000      ;    6  L3
+        .db     0b11000000,     0b00000000      ;    7  SELECT
+
+        .db     0b00000001,     0b00000011      ;    8  □
+        .db     0b00000001,     0b00000000      ;    9  ×
+        .db     0b00000000,     0b10000000      ;   10  ○
+        .db     0b00000000,     0b01000000      ;   11  △
+        .db     0b10000000,     0b00010000      ;   12  R1
+        .db     0b10000000,     0b00100000      ;   13  L1
+        .db     0b10000000,     0b00000000      ;   14  R2
+        .db     0b10000000,     0b00000000      ;   15  L2
+
+
+
+SetBtnTblF2S:
+
+        ldi     ZL, low(DefPad2BtnTbl*2)
+        ldi     ZH, high(DefPad2BtnTbl*2)
+
+        lpm
+        adiw    ZL, 1
+        st      Y+, r0
+        dec     LpCnt
+        brne    PC-4
+
+        ret
+
+
+SetBtnTbl:
+
+        mov     r0, Tmpi
+
+        ldi     LpCnt, P1BTNTBL
+        sbrs    r0, 1
+        rjmp    PC+2
+        ldi     LpCnt, P2BTNTBL
+        mov     Tmpr, LpCnt
+
+        ldi     YL, low(Pad2BtnTbl1)
+        ldi     YH, high(Pad2BtnTbl1)
+        sbrs    r0, 0
+        rjmp    PC+3
+        ldi     YL, low(Pad2BtnTbl2)
+        ldi     YH, high(Pad2BtnTbl2)
+
+        ldi     LpCnt, BTNTBLSIZE
+
+        sbrc    r0, F2S
+        rjmp    SetBtnTblF2S
+        sbrs    r0, E2S
+        rjmp    PC+4
+
+        rcall   EepRead
+        cpi     Tmpi, $ff
+        breq    SetBtnTblF2S
+
+SetBtnTblLp:
+        sbrc    r0, S2E
+        rjmp    PC+4
+
+        rcall   EepRead
+        st      Y+, Tmpi
+        rjmp    PC+3
+
+        ld      Tmpi, Y+
+        rcall   EepWrite
+
+        inc     Tmpr
+        dec     LpCnt
+        brne    SetBtnTblLp
+
+        ret
+
+
+
+;
+; EEPROM読み込み
+;
+EepRead:
+        sbic    EECR, EEWE
+        rjmp    PC-1
+        out     EEAR, Tmpr
+        sbi     EECR, EERE
+        in      Tmpi, EEDR
+        ret
+
+
+;
+; EEPROM書き込み
+;
+EepWrite:
+        push    Tmpr
+
+        sbic    EECR, EEWE
+        rjmp    PC-1
+        out     EEAR, Tmpr
+        sbi     EECR, EERE
+        in      Tmpr, EEDR
+
+        cp      Tmpi, Tmpr
+        breq    EepWriteExit
+
+        out     EEDR, Tmpi
+
+        in      Tmpi, SREG
+        cli
+        sbi     EECR, EEMWE
+        sbi     EECR, EEWE
+        out     SREG, Tmpi
+
+EepWriteExit:
+        pop     Tmpr
+        ret
+
+
+
+
+
+;
+; CPLDに送るボタンデータの順番
+;
+;       0       TEST
+;       1       P1CR
+;       2       P2CR
+;       3       P1ST
+;       4       P2ST
+;       5       P1U
+;       6       P2U
+;       7       P1D
+;
+;       8       P2D
+;       9       P1L
+;       10      P2L
+;       11      P1R
+;       12      P2R
+;       13      P1BA
+;       14      P2BA
+;       15      P1BB
+;
+;       16      P2BB
+;       17      P1BC
+;       18      P2BC
+;       19      P1BD
+;       20      P2BD
+;       21      P1BE
+;       22      P2BE
+;
+
+
+Pad2Btn:
+
+        clr     XL,
+        ldi     XH, (1<<TEST)
+        rcall   Pad2Btn1        ; 0-7
+                                ; 8-15
+
+Pad2Btn1:
+        ld      Tmpr, Y
+        ldi     LpCnt, 8
+BtnLp:
+
+        ldd     SioCnt, Z+0
+        lsl     Tmpi
+        bst     SioCnt, TEST
+        bld     Tmpi, 0
+
+        lsl     Tmpr
+        brcs    NextBtn
+
+        ldd     SioDat, Z+1
+        sbrs    SioDat, RAPID1
+        rjmp    PC+6
+        mov     r0, PadRapid
+        sbrc    SioDat, RAPID0
+        lsr     r0
+        sbrs    r0, 0
+        rjmp    NextBtn
+
+        andi    SioDat, ~((1<<RAPID1)+(1<<RAPID0))
+        or      XL, SioDat
+        ldi     SioDat, ~(1<<TEST)
+        and     SioCnt, SioDat
+        or      XH, SioCnt
+
+NextBtn:
+        adiw    ZL, 2
+        dec     LpCnt
+        brne    BtnLp
+
+        ld      Tmpr, Y+
+        com     Tmpr
+        cpse    Tmpi, Tmpr
+        andi    XH, ~(1<<TEST)
+        ret
+
+
+
+SetBtn:
+
+        clr     BtnP10
+        clr     BtnP11
+        clr     BtnP20
+        clr     BtnP21
+        sbrc    EditSts, EDIT_EDIT
+        rjmp    CnvSkip
+        mov     Tmpi, SelCnt
+        cpi     Tmpi, EDIT_TIM
+        breq    CnvSkip
+
+        sbrs    PadSts, PS_P1
+        rjmp    PC+8
+        ldi     YL, low(P1Pad+1)
+        ldi     YH, high(P1Pad+1)
+        ldi     ZL, low(Pad2BtnTbl1)
+        ldi     ZH, high(Pad2BtnTbl1)
+        rcall   Pad2Btn
+        mov     BtnP10, XL
+        mov     BtnP11, XH
+
+        sbrs    PadSts, PS_P2
+        rjmp    PC+8
+        ldi     YL, low(P2Pad+1)
+        ldi     YH, high(P2Pad+1)
+        ldi     ZL, low(Pad2BtnTbl2)
+        ldi     ZH, high(Pad2BtnTbl2)
+        rcall   Pad2Btn
+        mov     BtnP20, XL
+        mov     BtnP21, XH
+
+        ; P1CR
+        ; P2CR
+        mov     Tmpr, PadSts
+        bst     BtnP11, CREDIT
+        bld     Tmpr, PS_P1CRUP
+        bst     BtnP21, CREDIT
+        bld     Tmpr, PS_P2CRUP
+        mov     Tmpi, Tmpr
+        com     Tmpr
+        and     Tmpr, PadSts
+        mov     PadSts, Tmpi
+
+        bst     Tmpr, PS_P1CRUP
+        bld     BtnP11, CREDIT
+        bst     Tmpr, PS_P2CRUP
+        bld     BtnP21, CREDIT
+
+CnvSkip:
+
+
+;       rcall   BtnDataTx
+
+        cbi     PORTB, BSTB
+
+        ; TEST
+        mov     Tmpi, BtnP11
+        or      Tmpi, BtnP21
+        lsl     Tmpi
+        rcall   CpldTx
+
+        lsl     BtnP10
+        rol     BtnP11
+        lsl     BtnP20
+        rol     BtnP21
+
+        ldi     LpCnt, 11
+CpldTxLp:
+
+        lsl     BtnP10
+        rol     BtnP11
+        rcall   CpldTx
+
+        lsl     BtnP20
+        rol     BtnP21
+        rcall   CpldTx
+
+        dec     LpCnt
+        brne    CpldTxLp
+
+        cbi     PORTB, BCLK
+        sbi     PORTB, BSTB
+        sbi     PORTB, BCLK
+
+        cbi     PORTB, BCLK
+        cbi     PORTB, BSTB
+        ret
+
+
+CpldTx:
+        cbi     PORTB, BCLK
+
+        brcs    PC+2
+        cbi     PORTB, BDAT
+        brcc    PC+2
+        sbi     PORTB, BDAT
+
+        sbi     PORTB, BCLK
+        ret
+
+
+
+
+
+;
+; 5x5フォント
+; ※52個まで（$00～$33）
+;
+FontTbl:
+
+        .db     0b00000, 0b00000, 0b00000, 0b00000, 0b00000,    0b00000, 0b00000, 0b01110, 0b10010, 0b01101     ; ' ' 'a'
+        .db     0b10000, 0b10000, 0b11100, 0b10010, 0b11100,    0b00000, 0b00000, 0b01110, 0b10000, 0b01110     ; 'b' 'c'
+        .db     0b00010, 0b00010, 0b01110, 0b10010, 0b01110,    0b11111, 0b11111, 0b11111, 0b11111, 0b11111     ; 'd' '■'
+        .db     0b01000, 0b10100, 0b01000, 0b10101, 0b01110,    0b11111, 0b10001, 0b10001, 0b10001, 0b11111     ; '&' '□'
+        .db     0b10001, 0b01010, 0b00100, 0b01010, 0b10001,    0b11111, 0b00100, 0b00100, 0b00100, 0b00100     ; '×' 'T'
+        .db     0b10001, 0b10001, 0b10001, 0b10001, 0b01110,    0b10001, 0b10001, 0b10001, 0b01010, 0b00100     ; 'U' 'V'
+        .db     0b10001, 0b10001, 0b10101, 0b10101, 0b01010,    0b10001, 0b01010, 0b00100, 0b01010, 0b10001     ; 'W' 'X'
+        .db     0b10001, 0b01010, 0b00100, 0b00100, 0b00100,    0b11111, 0b00010, 0b00100, 0b01000, 0b11111     ; 'Y' 'Z'
+        .db     0b01100, 0b10010, 0b10010, 0b10010, 0b01100,    0b00100, 0b01100, 0b00100, 0b00100, 0b00100     ; '0' '1'
+        .db     0b01100, 0b10010, 0b00100, 0b01000, 0b11110,    0b01100, 0b10010, 0b00100, 0b10010, 0b01100     ; '2' '3'
+        .db     0b00100, 0b01100, 0b10100, 0b11110, 0b00100,    0b11110, 0b10000, 0b11100, 0b00010, 0b11100     ; '4' '5'
+        .db     0b01100, 0b10000, 0b11100, 0b10010, 0b01100,    0b11110, 0b10010, 0b00010, 0b00100, 0b00100     ; '6' '7'
+        .db     0b01100, 0b10010, 0b01100, 0b10010, 0b01100,    0b01100, 0b10010, 0b01110, 0b00010, 0b01100     ; '8' '9'
+        .db     0b01110, 0b11011, 0b10001, 0b11011, 0b01110,    0b00100, 0b01110, 0b11011, 0b10001, 0b11111     ; '○' '△'
+        .db     0b00100, 0b01000, 0b11111, 0b01000, 0b00100,    0b00100, 0b00100, 0b10101, 0b01110, 0b00100     ; '←' '↓'
+        .db     0b00100, 0b00010, 0b11111, 0b00010, 0b00100,    0b00100, 0b01110, 0b10101, 0b00100, 0b00100     ; '→' '↑'
+        .db     0b00000, 0b00000, 0b01110, 0b00000, 0b00000,    0b00100, 0b01010, 0b10001, 0b11111, 0b10001     ; '-' 'A'
+        .db     0b11110, 0b10001, 0b11110, 0b10001, 0b11110,    0b01110, 0b10001, 0b10000, 0b10001, 0b01110     ; 'B' 'C'
+        .db     0b11110, 0b10001, 0b10001, 0b10001, 0b11110,    0b11111, 0b10000, 0b11110, 0b10000, 0b11111     ; 'D' 'E'
+        .db     0b11111, 0b10000, 0b11110, 0b10000, 0b10000,    0b01110, 0b10000, 0b10011, 0b10001, 0b01111     ; 'F' 'G'
+        .db     0b10001, 0b10001, 0b11111, 0b10001, 0b10001,    0b01110, 0b00100, 0b00100, 0b00100, 0b01110     ; 'H' 'I'
+        .db     0b00111, 0b00010, 0b00010, 0b10010, 0b01100,    0b10010, 0b10100, 0b11000, 0b10100, 0b10010     ; 'J' 'K'
+        .db     0b10000, 0b10000, 0b10000, 0b10000, 0b11111,    0b10001, 0b11011, 0b10101, 0b10001, 0b10001     ; 'L' 'M'
+        .db     0b10001, 0b11001, 0b10101, 0b10011, 0b10001,    0b01110, 0b10001, 0b10001, 0b10001, 0b01110     ; 'N' 'O'
+        .db     0b11110, 0b10001, 0b11110, 0b10000, 0b10000,    0b01110, 0b10001, 0b10101, 0b10010, 0b01101     ; 'P' 'Q'
+        .db     0b11110, 0b10001, 0b11110, 0b10100, 0b10011,    0b01111, 0b10000, 0b01110, 0b00001, 0b11110     ; 'R' 'S'
+
+
+        .exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        ; TIMER1割り込み周期
+        ; 7.15909M/9600=745.74=1.34ms
+
+        ; TIMER1コンペア値設定
+        ; ※7.15909M/9600=745.74
+        ldi     Tmpi, high(746-1)
+        out     OCR1AH, Tmpi
+        ldi     Tmpi, low(746-1)
+        out     OCR1AL, Tmpi
+
+        ; TIMER1一致クリア許可
+        in      Tmpi, TCCR1B
+        ori     Tmpi, (1<<CTC1)
+        out     TCCR1B, Tmpi
+
+        ; TIMER1コンペア出力設定
+        ; ※OC1 H       (1<<COM1A1)+(1<<COM1A0)
+        ;   OC1 L       (1<<COM1A1)            
+        ;   OC1 トグル              (1<<COM1A0)
+        ;   OC1 未使用                        0
+        in      Tmpi, TCCR1A
+        andi    Tmpi, ~((1<<COM1A1)+(1<<COM1A0))
+;       ori     Tmpi, (1<<COM1A0)
+        out     TCCR1A, Tmpi
+
+        ; TIMER1クロック設定
+        ; ※T1 L→H     (1<<CS12)+(1<<CS11)+(1<<CS10)
+        ;   T1 H→L     (1<<CS12)+(1<<CS11)          
+        ;   CK/1024     (1<<CS12)+          (1<<CS10)
+        ;   CK/ 256     (1<<CS12)                    
+        ;   CK/  64               (1<<CS11)+(1<<CS10)
+        ;   CK/   8               (1<<CS11)          
+        ;   CK/   1                         (1<<CS10)
+        ;   停止                                    0
+        in      Tmpi, TCCR1B
+        andi    Tmpi, ~((1<<CS12)+(1<<CS11)+(1<<CS10))
+        ori     Tmpi, (1<<CS10)
+        out     TCCR1B, Tmpi
+
+        rcall   DisTim1Intr
+
+
+
+
+
+PadDataTx:
+
+        ldi     ZL, low(P1Pad)
+        ldi     ZH, high(P1Pad)
+        ldi     Tmpi, (1<<PS_P1)
+        rcall   PTx
+
+        ldi     SioDat, ' '
+        rcall   SioTx
+
+
+        ldi     ZL, low(P2Pad)
+        ldi     ZH, high(P2Pad)
+        ldi     Tmpi, (1<<PS_P2)
+        rcall   PTx
+
+        ldi     SioDat, $0d
+;       ldi     SioDat, ' '
+        rcall   SioTx
+        ret
+
+
+PTx:
+
+        ldi     SioDat, '['
+        rcall   SioTx
+
+        and     Tmpi, PadSts
+        breq    PTxExit
+
+        ld      Tmpi, Z
+        andi    Tmpi, $0f
+        brne    PC+2
+        ldi     Tmpi, $10
+        add     Tmpi, Tmpi
+        cpi     Tmpi, PADBUFSIZE+1
+        brlo    PC+2
+        ldi     Tmpi, PADBUFSIZE
+        inc     Tmpi
+        mov     LpCnt, Tmpi
+
+        ld      Tmpi, Z+
+        rcall   HexTx
+        dec     LpCnt
+        brne    PC-3
+
+PTxExit:
+        ldi     SioDat, ']'
+        rcall   SioTx
+        ret
+
+
+
+
+
+BtnDataTx:
+        ldi     SioDat, '['
+        rcall   SioTx
+        mov     Tmpi, BtnP11
+        rcall   BinTx
+        mov     Tmpi, BtnP10
+        rcall   BinTx
+        ldi     SioDat, ']'
+        rcall   SioTx
+
+        ldi     SioDat, '['
+        rcall   SioTx
+        mov     Tmpi, BtnP21
+        rcall   BinTx
+        mov     Tmpi, BtnP20
+        rcall   BinTx
+        ldi     SioDat, ']'
+        rcall   SioTx
+
+        ldi     SioDat, $0d
+        rcall   SioTx
+;       ldi     SioDat, $0a
+;       rcall   SioTx
+        ret
+
+
+
+
+
+;
+; 8桁の2進数に変換して送信
+; ※Tmpiを表示
+;
+BinTx:
+        push    Tmpi
+        rcall   BinTx1  ; b7
+        rcall   BinTx1  ; b6
+        rcall   BinTx1  ; b5
+        rcall   BinTx1  ; b4
+        rcall   BinTx1  ; b3
+        rcall   BinTx1  ; b2
+        rcall   BinTx1  ; b1
+        rcall   BinTx1  ; b0
+        pop     Tmpi
+        ret
+
+BinTx1:
+        ldi     SioDat, '0'
+        rol     Tmpi
+        adc     SioDat, Zero
+        rjmp    SioTx
+
+
+;
+; 2桁の16進数に変換して送信
+; ※Tmpiを表示
+;
+HexTx:
+        rcall   HexTx4  ; b7-b4
+                        ; b3-b0
+HexTx4:
+        swap    Tmpi
+        mov     SioDat, Tmpi
+        andi    SioDat, $0f
+        subi    SioDat, 10
+        brmi    PC+2
+        subi    SioDat, -('a'-'0'-10)   ; 'a'～'f'
+        subi    SioDat, -('0'+10)
+        rjmp    SioTx
+
+
+
+
+
+EnaTim1Intr:
+        push    Tmpi
+
+        ; TIMER1カウンタ値設定
+        out     TCNT1H, Zero
+        out     TCNT1L, Zero
+
+        ; TIMER1割り込み要求フラグクリア
+        ldi     Tmpi, (1<<OCF1A)
+        out     TIFR, Tmpi
+
+        ; TIMER1割り込み許可
+        in      Tmpi, TIMSK
+        ori     Tmpi, (1<<OCIE1A)
+        out     TIMSK, Tmpi
+
+        pop     Tmpi
+        ret
+
+
+DisTim1Intr:
+        push    Tmpi
+
+        ; TIMER1割り込み禁止
+        in      Tmpi, TIMSK
+        andi    Tmpi, ~(1<<OCIE1A)
+        out     TIMSK, Tmpi
+
+        ; TIMER1割り込み要求フラグクリア
+        ldi     Tmpi, (1<<OCF1A)
+        out     TIFR, Tmpi
+
+        pop     Tmpi
+        ret
+
+
+; カウンタ1コンペアマッチ割り込み
+Counter1Intr:
+        in      SregSave, SREG
+
+        lsr     SioDat
+        brcs    PC+2
+        cbi     PORTB, MISO
+        brcc    PC+2
+        sbi     PORTB, MISO
+
+        dec     SioCnt
+        brne    PC+2
+        rcall   DisTim1Intr
+
+        out     SREG, SregSave
+        reti
+
+
+;
+; ISPケーブルを使ったシリアル送信
+; ※SioDatを送信
+;   割り込みを許可していないと送信しない
+;
+SioTx:
+        brid    SioTxExit
+
+        push    Tmpi
+        ldi     Tmpi, 8+2       ; 8データビット+2ストップビット
+        mov     SioCnt, Tmpi
+        pop     Tmpi
+        com     SioDat
+
+        sbi     PORTB, MISO     ; スタートビット
+        rcall   EnaTim1Intr
+
+        sleep
+        tst     SioCnt
+        brne    PC-2
+
+SioTxExit:
+        ret
+

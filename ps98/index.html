@@ -1,0 +1,173 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=shift_jis">
+<title>S98/VGMプレイヤー</title>
+<link href="../s.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+
+<table width="100%" class="fr"><tr>
+<td width="70%"><a href="../index.html">ものおき</a> / S98/VGMプレイヤー</td>
+<td width="30%" align="right">更新 '14/0104</td>
+</tr></table>
+<table width="100%" class="fr"><tr>
+<td width="55%">
+　USB接続の音源ICを使用してS98/VGM（VGZ）ファイルを再生します。<br>
+<br>
+<a href="busbuf_sch.png">バスバッファ回路図</a><br>
+<a href="fx2_sch.png">MINI FX2→MINI EZ-USB変換回路図</a><br>
+<a href="pic32_sch.png">PIC32→MINI EZ-USB変換回路図</a><br>
+<br>
+<a href="ym2149f_ay-3-8913_sch.png">YM2149F/AY-3-8913回路図</a><br>
+<a href="ym3439-f_ymz284-d_sch.png">YM3439-F/YMZ284-D回路図</a><br>
+<a href="ymz294-d_ymz294-d_sch.png">YMZ294-D*2回路図</a><br>
+<a href="ym2203c_sch.png">YM2203C回路図</a><br>
+<a href="ymf264-f_sch.png">YMF264-F回路図</a><br>
+<a href="ym2612_sch.png">YM2612回路図</a><br>
+<a href="ym3438_sch.png">YM3438回路図</a><br>
+<a href="ymf276-m_sch.png">YMF276-M回路図</a><br>
+<a href="ym2608b_sch.png">YM2608B回路図</a><br>
+<a href="ymf288-s_sch.png">YMF288-S回路図</a><br>
+<a href="ym2151_sch.png">YM2151回路図</a><br>
+<a href="ym2413_ymf281-m_sch.png">YM2413/YMF281-M回路図</a><br>
+<a href="y8950_sch.png">Y8950回路図</a><br>
+<a href="ym3812_ym3812_sch.png">YM3812*2回路図</a><br>
+<a href="ymf262-m_sch.png">YMF262-M回路図</a><br>
+<a href="ymf289b-s_sch.png">YMF289B-S回路図</a><br>
+<a href="ymf297-f_sch.png">YMF297-F回路図</a><br>
+<a href="ymf704-f_sch.png">YMF704-F回路図</a> / <a href="ymf704c-f_sch.png">YMF704C-F回路図</a><br>
+<a href="ay-3-8910_sch.png">AY-3-8910回路図</a><br>
+<a href="ay8930p_sch.png">AY8930/P回路図</a><br>
+<a href="sn76489an_sn76489an_sch.png">SN76489AN*2回路図</a><br>
+<a href="sn76489an_sn76489an_gg_sch.png">SN76489AN*2（GGステレオ）回路図</a><br>
+<a href="sn76489an_sn76489an_ngp_sch.png">SN76489AN*2（NGPステレオ）回路図</a><br>
+<a href="upd71054c_sch.png">uPD71054C回路図</a><br>
+<a href="051649_sch.png">051649回路図</a><br>
+<a href="053982_053982_sch.png">053982*2回路図</a><br>
+<a href="saa1099p_saa1099p_sch.png">SAA1099P*2回路図</a><br>
+<br>
+<a href="ym2610b_sch.png">YM2610B回路図</a><br>
+<a href="opnb.vhd.txt">YM2610B CPLDソース</a><br>
+<a href="opnb.jed">YM2610B JEDECファイル</a><br>
+
+<a href="ymf278b-f_sch.png">YMF278B-F回路図</a><br>
+<a href="opl4.vhd.txt">YMF278B-F CPLDソース</a><br>
+<a href="opl4.jed">YMF278B-F JEDECファイル</a><br>
+<a href="ym2151_ga20_sch.png">YM2151/GA20回路図</a><br>
+<a href="ga20.vhd.txt">YM2151/GA20 CPLDソース</a><br>
+<a href="ga20.jed">YM2151/GA20 JEDECファイル</a><br>
+
+<a href="ym2413_y8950_sch.png">YM2413/Y8950回路図</a><br>
+<a href="msxaudio.vhd.txt">YM2413/Y8950 CPLDソース</a><br>
+<a href="msxaudio.jed">YM2413/Y8950 JEDECファイル</a><br>
+<a href="ym2149f_051649_052539_sch.png">YM2149F/051649/052539回路図</a><br>
+<a href="scc.vhd.txt">YM2149F/051649/052539 CPLDソース</a><br>
+<a href="scc.jed">YM2149F/051649/052539 JEDECファイル</a> （SN74AHCT16374用）<br>
+<a href="ymf271-f_sch.png">YMF271-F回路図</a><br>
+<a href="opx.vhd.txt">YMF271-F FPGAソース</a><br>
+<a href="opx.bit">YMF271-F Bitファイル</a> （PCM1791用）<br>
+<a href="opx.mcs">YMF271-F MCSファイル</a> （XCF02/PCM1791用）<br>
+<a href="ymz280b-f_sch.png">YMZ280B-F回路図</a><br>
+<a href="pcmd8.vhd.txt">YMZ280B-F FPGAソース</a><br>
+<a href="pcmd8.bit">YMZ280B-F Bitファイル</a> （PCM1791用）<br>
+<a href="pcmd8.mcs">YMZ280B-F MCSファイル</a> （XCF02/PCM1791用）<br>
+
+<br>
+<a href="../psl/pslfw.zip">ファーム・ソース</a> （uVision2 V2.38j, MPLAB IDE V8.70）<br>
+<a href="../psl/pslapp.zip">アプリ・ソース</a> （Delphi 6）<br>
+</td>
+
+<td width="45%" align="center">
+<a href="busbuf_40t.jpg"><img src="busbuf_40t_thm.jpg" width="64" height="48" alt="バスバッファ基板表" title="バスバッファ基板表"></a>
+<a href="busbuf_40b.jpg"><img src="busbuf_40b_thm.jpg" width="64" height="48" alt="バスバッファ基板裏" title="バスバッファ基板裏"></a>
+<a href="fx2_40t.jpg"><img src="fx2_40t_thm.jpg" width="64" height="48" alt="MINI FX2→MINI EZ-USB変換基板表" title="MINI FX2→MINI EZ-USB変換基板表"></a>
+<a href="fx2_40b.jpg"><img src="fx2_40b_thm.jpg" width="64" height="48" alt="MINI FX2→MINI EZ-USB変換基板裏" title="MINI FX2→MINI EZ-USB変換基板裏"></a>
+<a href="pic32_40t.jpg"><img src="pic32_40t_thm.jpg" width="64" height="48" alt="PIC32→MINI EZ-USB変換基板表" title="PIC32→MINI EZ-USB変換基板表"></a>
+<a href="pic32_40b.jpg"><img src="pic32_40b_thm.jpg" width="64" height="48" alt="PIC32→MINI EZ-USB変換基板裏" title="PIC32→MINI EZ-USB変換基板裏"></a>
+<a href="ssg_8913_40t.jpg"><img src="ssg_8913_40t_thm.jpg" width="64" height="48" alt="YM2149F/AY-3-8913基板表" title="YM2149F/AY-3-8913基板表"></a>
+<a href="ssg_8913_40b.jpg"><img src="ssg_8913_40b_thm.jpg" width="64" height="48" alt="YM2149F/AY-3-8913基板裏" title="YM2149F/AY-3-8913基板裏"></a>
+<a href="ssgc_ssgl_40t.jpg"><img src="ssgc_ssgl_40t_thm.jpg" width="64" height="48" alt="YM3439-F/YMZ284-D基板表" title="YM3439-F/YMZ284-D基板表"></a>
+<a href="ssgc_ssgl_40b.jpg"><img src="ssgc_ssgl_40b_thm.jpg" width="64" height="48" alt="YM3439-F/YMZ284-D基板裏" title="YM3439-F/YMZ284-D基板裏"></a>
+<a href="ssglp_ssglp_40t.jpg"><img src="ssglp_ssglp_40t_thm.jpg" width="64" height="48" alt="YMZ294-D*2基板表" title="YMZ294-D*2基板表"></a>
+<a href="ssglp_ssglp_40b.jpg"><img src="ssglp_ssglp_40b_thm.jpg" width="64" height="48" alt="YMZ294-D*2基板裏" title="YMZ294-D*2基板裏"></a>
+<a href="opn_40t.jpg"><img src="opn_40t_thm.jpg" width="64" height="48" alt="YM2203C基板表" title="YM2203C基板表"></a>
+<a href="opn_40b.jpg"><img src="opn_40b_thm.jpg" width="64" height="48" alt="YM2203C基板裏" title="YM2203C基板裏"></a>
+<a href="opnc_40t.jpg"><img src="opnc_40t_thm.jpg" width="64" height="48" alt="YMF264-F基板表" title="YMF264-F基板表"></a>
+<a href="opnc_40b.jpg"><img src="opnc_40b_thm.jpg" width="64" height="48" alt="YMF264-F基板裏" title="YMF264-F基板裏"></a>
+<a href="opn2_40t.jpg"><img src="opn2_40t_thm.jpg" width="64" height="48" alt="YM2612基板表" title="YM2612基板表"></a>
+<a href="opn2_40b.jpg"><img src="opn2_40b_thm.jpg" width="64" height="48" alt="YM2612基板裏" title="YM2612基板裏"></a>
+<a href="opn2c_40t.jpg"><img src="opn2c_40t_thm.jpg" width="64" height="48" alt="YM3438基板表" title="YM3438基板表"></a>
+<a href="opn2c_40b.jpg"><img src="opn2c_40b_thm.jpg" width="64" height="48" alt="YM3438基板裏" title="YM3438基板裏"></a>
+<a href="276_40t.jpg"><img src="276_40t_thm.jpg" width="64" height="48" alt="YMF276-M基板表" title="YMF276-M基板表"></a>
+<a href="276_40b.jpg"><img src="276_40b_thm.jpg" width="64" height="48" alt="YMF276-M基板裏" title="YMF276-M基板裏"></a>
+<a href="opna_40t.jpg"><img src="opna_40t_thm.jpg" width="64" height="48" alt="YM2608B基板表" title="YM2608B基板表"></a>
+<a href="opna_40b.jpg"><img src="opna_40b_thm.jpg" width="64" height="48" alt="YM2608B基板裏" title="YM2608B基板裏"></a>
+<a href="opn3-l_40t.jpg"><img src="opn3-l_40t_thm.jpg" width="64" height="48" alt="YMF288-S基板表" title="YMF288-S基板表"></a>
+<a href="opn3-l_40b.jpg"><img src="opn3-l_40b_thm.jpg" width="64" height="48" alt="YMF288-S基板裏" title="YMF288-S基板裏"></a>
+<a href="opm_40t.jpg"><img src="opm_40t_thm.jpg" width="64" height="48" alt="YM2151基板表" title="YM2151基板表"></a>
+<a href="opm_40b.jpg"><img src="opm_40b_thm.jpg" width="64" height="48" alt="YM2151基板裏" title="YM2151基板裏"></a>
+<a href="opp_40t.jpg"><img src="opp_40t_thm.jpg" width="64" height="48" alt="YM2164基板表" title="YM2164基板表"></a>
+<a href="opz_40t.jpg"><img src="opz_40t_thm.jpg" width="64" height="48" alt="YM2414B基板表" title="YM2414B基板表"></a>
+<a href="opll_opllp_40t.jpg"><img src="opll_opllp_40t_thm.jpg" width="64" height="48" alt="YM2413/YMF281-M基板表" title="YM2413/YMF281-M基板表"></a>
+<a href="opll_opllp_40b.jpg"><img src="opll_opllp_40b_thm.jpg" width="64" height="48" alt="YM2413/YMF281-M基板裏" title="YM2413/YMF281-M基板裏"></a>
+<a href="msx-audio_40t.jpg"><img src="msx-audio_40t_thm.jpg" width="64" height="48" alt="Y8950基板表" title="Y8950基板表"></a>
+<a href="msx-audio_40b.jpg"><img src="msx-audio_40b_thm.jpg" width="64" height="48" alt="Y8950基板裏" title="Y8950基板裏"></a>
+<a href="opl_opl2_40t.jpg"><img src="opl_opl2_40t_thm.jpg" width="64" height="48" alt="YM3526/YM3812基板表" title="YM3526/YM3812基板表"></a>
+<a href="opl2_opl2_40t.jpg"><img src="opl2_opl2_40t_thm.jpg" width="64" height="48" alt="YM3812*2基板表" title="YM3812*2基板表"></a>
+<a href="opl2_opl2_40b.jpg"><img src="opl2_opl2_40b_thm.jpg" width="64" height="48" alt="YM3812*2基板裏" title="YM3812*2基板裏"></a>
+<a href="opl3_40t.jpg"><img src="opl3_40t_thm.jpg" width="64" height="48" alt="YMF262-M基板表" title="YMF262-M基板表"></a>
+<a href="opl3_40b.jpg"><img src="opl3_40b_thm.jpg" width="64" height="48" alt="YMF262-M基板裏" title="YMF262-M基板裏"></a>
+<a href="opl3-l_40t.jpg"><img src="opl3-l_40t_thm.jpg" width="64" height="48" alt="YMF289B-S基板表" title="YMF289B-S基板表"></a>
+<a href="opl3-l_40b.jpg"><img src="opl3-l_40b_thm.jpg" width="64" height="48" alt="YMF289B-S基板裏" title="YMF289B-S基板裏"></a>
+<a href="opl3-nl_40t.jpg"><img src="opl3-nl_40t_thm.jpg" width="64" height="48" alt="YMF297-F基板表" title="YMF297-F基板表"></a>
+<a href="opl3-nl_40b.jpg"><img src="opl3-nl_40b_thm.jpg" width="64" height="48" alt="YMF297-F基板裏" title="YMF297-F基板裏"></a>
+<a href="704_40t.jpg"><img src="704_40t_thm.jpg" width="64" height="48" alt="YMF704-F基板表" title="YMF704-F基板表"></a>
+<a href="opl4-ml_40t.jpg"><img src="opl4-ml_40t_thm.jpg" width="64" height="48" alt="YMF704C-F基板表" title="YMF704C-F基板表"></a>
+<a href="opl4-ml_40b.jpg"><img src="opl4-ml_40b_thm.jpg" width="64" height="48" alt="YMF704C-F基板裏" title="YMF704C-F基板裏"></a>
+<a href="psg_40t.jpg"><img src="psg_40t_thm.jpg" width="64" height="48" alt="AY-3-8910基板表" title="AY-3-8910基板表"></a>
+<a href="psg_40b.jpg"><img src="psg_40b_thm.jpg" width="64" height="48" alt="AY-3-8910基板裏" title="AY-3-8910基板裏"></a>
+<a href="epsg_40t.jpg"><img src="epsg_40t_thm.jpg" width="64" height="48" alt="AY8930/P基板表" title="AY8930/P基板表"></a>
+<a href="epsg_40b.jpg"><img src="epsg_40b_thm.jpg" width="64" height="48" alt="AY8930/P基板裏" title="AY8930/P基板裏"></a>
+<a href="76489_76489_40t.jpg"><img src="76489_76489_40t_thm.jpg" width="64" height="48" alt="SN76489N*2基板表" title="SN76489N*2基板表"></a>
+<a href="76489a_76489a_40t.jpg"><img src="76489a_76489a_40t_thm.jpg" width="64" height="48" alt="SN76489AN*2基板表" title="SN76489AN*2基板表"></a>
+<a href="76489a_76489a_40b.jpg"><img src="76489a_76489a_40b_thm.jpg" width="64" height="48" alt="SN76489AN*2基板裏" title="SN76489AN*2基板裏"></a>
+<a href="76496a_76496a_40t.jpg"><img src="76496a_76496a_40t_thm.jpg" width="64" height="48" alt="SN76496AN*2基板表" title="SN76496AN*2基板表"></a>
+<a href="76489a_76489a_gg_40t.jpg"><img src="76489a_76489a_gg_40t_thm.jpg" width="64" height="48" alt="SN76489AN*2（GGステレオ）基板表" title="SN76489AN*2（GGステレオ）基板表"></a>
+<a href="76489a_76489a_gg_40b.jpg"><img src="76489a_76489a_gg_40b_thm.jpg" width="64" height="48" alt="SN76489AN*2（GGステレオ）基板裏" title="SN76489AN*2（GGステレオ）基板裏"></a>
+<a href="76489a_76489a_ngp_40t.jpg"><img src="76489a_76489a_ngp_40t_thm.jpg" width="64" height="48" alt="SN76489AN*2（NGPステレオ）基板表" title="SN76489AN*2（NGPステレオ）基板表"></a>
+<a href="76489a_76489a_ngp_40b.jpg"><img src="76489a_76489a_ngp_40b_thm.jpg" width="64" height="48" alt="SN76489AN*2（NGPステレオ）基板裏" title="SN76489AN*2（NGPステレオ）基板裏"></a>
+<a href="ptc_40t.jpg"><img src="ptc_40t_thm.jpg" width="64" height="48" alt="uPD71054C基板表" title="uPD71054C基板表"></a>
+<a href="ptc_40b.jpg"><img src="ptc_40b_thm.jpg" width="64" height="48" alt="uPD71054C基板裏" title="uPD71054C基板裏"></a>
+<a href="scc_40t.jpg"><img src="scc_40t_thm.jpg" width="64" height="48" alt="051649基板表" title="051649基板表"></a>
+<a href="scc_40b.jpg"><img src="scc_40b_thm.jpg" width="64" height="48" alt="051649基板裏" title="051649基板裏"></a>
+<a href="vrc7_vrc7_40t.jpg"><img src="vrc7_vrc7_40t_thm.jpg" width="64" height="48" alt="053982*2基板表" title="053982*2基板表"></a>
+<a href="vrc7_vrc7_40b.jpg"><img src="vrc7_vrc7_40b_thm.jpg" width="64" height="48" alt="053982*2基板裏" title="053982*2基板裏"></a>
+<a href="1099_1099_40t.jpg"><img src="1099_1099_40t_thm.jpg" width="64" height="48" alt="SAA1099P*2基板表" title="SAA1099P*2基板表"></a>
+<a href="1099_1099_40b.jpg"><img src="1099_1099_40b_thm.jpg" width="64" height="48" alt="SAA1099P*2基板裏" title="SAA1099P*2基板裏"></a>
+
+<a href="opnb_40t.jpg"><img src="opnb_40t_thm.jpg" width="64" height="48" alt="YM2610基板表" title="YM2610基板表"></a>
+<a href="286_40t.jpg"><img src="286_40t_thm.jpg" width="64" height="48" alt="YMF286-K基板表" title="YMF286-K基板表"></a>
+<a href="2610b_40t.jpg"><img src="2610b_40t_thm.jpg" width="64" height="48" alt="YM2610B基板表" title="YM2610B基板表"></a>
+<a href="2610b_40b.jpg"><img src="2610b_40b_thm.jpg" width="64" height="48" alt="YM2610B基板裏" title="YM2610B基板裏"></a>
+
+<a href="268_40t.jpg"><img src="268_40t_thm.jpg" width="64" height="48" alt="YMF268-F基板表" title="YMF268-F基板表"></a>
+<a href="opl4_40t.jpg"><img src="opl4_40t_thm.jpg" width="64" height="48" alt="YMF278B-F基板表" title="YMF278B-F基板表"></a>
+<a href="opl4_40b.jpg"><img src="opl4_40b_thm.jpg" width="64" height="48" alt="YMF278B-F基板裏" title="YMF278B-F基板裏"></a>
+<a href="opm_ga20_40t.jpg"><img src="opm_ga20_40t_thm.jpg" width="64" height="48" alt="YM2151/GA20基板表" title="YM2151/GA20基板表"></a>
+<a href="opm_ga20_40b.jpg"><img src="opm_ga20_40b_thm.jpg" width="64" height="48" alt="YM2151/GA20基板裏" title="YM2151/GA20基板裏"></a>
+
+<a href="opll_msxaudio_40t.jpg"><img src="opll_msxaudio_40t_thm.jpg" width="64" height="48" alt="YM2413/Y8950基板表" title="YM2413/Y8950基板表"></a>
+<a href="opll_msxaudio_40b.jpg"><img src="opll_msxaudio_40b_thm.jpg" width="64" height="48" alt="YM2413/Y8950基板裏" title="YM2413/Y8950基板裏"></a>
+<a href="ssg_scc_40t.jpg"><img src="ssg_scc_40t_thm.jpg" width="64" height="48" alt="YM2149F/051649基板表" title="YM2149F/051649基板表"></a>
+<a href="ssg_scc_40b.jpg"><img src="ssg_scc_40b_thm.jpg" width="64" height="48" alt="YM2149F/051649基板裏" title="YM2149F/051649基板裏"></a>
+<a href="ssg_052539_40t.jpg"><img src="ssg_052539_40t_thm.jpg" width="64" height="48" alt="YM2149F/052539基板表" title="YM2149F/052539基板表"></a>
+<a href="ssg_052539_40b.jpg"><img src="ssg_052539_40b_thm.jpg" width="64" height="48" alt="YM2149F/052539基板裏" title="YM2149F/052539基板裏"></a>
+<a href="opx_40t.jpg"><img src="opx_40t_thm.jpg" width="64" height="48" alt="YMF271-F基板表" title="YMF271-F基板表"></a>
+<a href="opx_40b.jpg"><img src="opx_40b_thm.jpg" width="64" height="48" alt="YMF271-F基板裏" title="YMF271-F基板裏"></a>
+<a href="pcmd8_40t.jpg"><img src="pcmd8_40t_thm.jpg" width="64" height="48" alt="YMZ280B-F基板表" title="YMZ280B-F基板表"></a>
+<a href="pcmd8_40b.jpg"><img src="pcmd8_40b_thm.jpg" width="64" height="48" alt="YMZ280B-F基板裏" title="YMZ280B-F基板裏"></a>
+</td>
+</tr></table>
+
+</body>
+</html>

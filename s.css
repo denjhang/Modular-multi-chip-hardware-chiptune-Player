@@ -1,0 +1,36 @@
+
+body {
+	margin-top: 2em;
+	margin-left: 3em;
+	margin-bottom: 2em;
+	margin-right: 3em;
+	background: #f8f8f0;
+	color: #686880;
+}
+
+a, p, table, table td, pre {
+	font-size: small;
+	font-family: sans-serif;
+	line-height: 1.3em;
+}
+
+table.fr {
+	border-style: solid;
+	border-width: 1px;
+	border-color: #686880;
+}
+table, table td {
+	padding-top: 0.3em;
+	padding-left: 0.5em;
+	padding-bottom: 0.3em;
+	padding-right: 0.5em;
+	margin-top: 1px;
+}
+
+u { color: #40d850; }
+a:link { color: #40d850; }
+a:link img { border-color: #40e850; }
+
+a:visited { color: #308060; }
+a:visited img { border-color: #309060; }
+
